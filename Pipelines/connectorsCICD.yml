@@ -1,18 +1,64 @@
-# Connectors build and deploy pipeline
-# This pipeline publishes the connectors file as an artifact and then uses a powershell task to deploy
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
 
-name: build and deploy Connectors
+name: InitialSetup
 resources:
  pipelines:
    - pipeline: Scripts
      source: 'scriptsCI'
-trigger:
- paths:
-   include:
-     - Connectors/*
 
 stages:
-- stage: build_connectors
+- stage: Onboarding_File
+
+  jobs:
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'vs2017-win2016'
+      steps:
+       - task: CopyFiles@2
+         displayName: 'Copy Onboarding'
+         inputs:
+          SourceFolder: Onboard
+          TargetFolder: '$(Pipeline.Workspace)'
+       - task: Files-Validator@1
+         inputs:
+           rootDir: '$(Pipeline.Workspace)/*.json'
+           validateXML: false
+           validateJSON: true
+           validateYAML: false
+           validatePS: false
+       - task: PublishBuildArtifacts@1
+         displayName: 'Publish Artifact: OnboardingFile'
+         inputs:
+          PathtoPublish: '$(Pipeline.Workspace)'
+          ArtifactName: OnboardingFile
+
+- stage: Sentinel_Deployment
+  jobs:
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'windows-2019'
+      variables: 
+      - group: Az connection settings
+      steps:
+      - download: current
+        artifact: OnboardingFile
+      - download: Scripts
+        patterns: '*.ps1'
+      - task: AzurePowerShell@4
+        displayName: 'Install Sentinel'
+        inputs:
+         azureSubscription: 'SentinelasCode'
+         ScriptPath: '$(Pipeline.Workspace)/Scripts/Scripts/InstallSentinel.ps1'
+         ScriptArguments: '-OnboardingFile onboarding.json'
+         azurePowerShellVersion: LatestVersion
+         pwsh: true
+
+- stage: Connectors
 
   jobs:
     - job: AgentJob
@@ -38,8 +84,6 @@ stages:
           PathtoPublish: '$(Pipeline.Workspace)'
           ArtifactName: ConnectorsFile
 
-- stage: deploy_connectors
-  jobs:
     - job: AgentJob
       pool:
        name: Azure Pipelines
@@ -60,3 +104,95 @@ stages:
          azurePowerShellVersion: LatestVersion
          pwsh: true
 
+
+- stage: Playbooks
+
+  jobs:
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'vs2017-win2016'
+      steps:
+       - task: CopyFiles@2
+         displayName: 'Copy Playbooks'
+         inputs:
+          SourceFolder: Playbooks
+          TargetFolder: '$(Pipeline.Workspace)'
+       - task: Files-Validator@1
+         inputs:
+           rootDir: '$(Pipeline.Workspace)/*.json'
+           validateXML: false
+           validateJSON: true
+           validateYAML: false
+           validatePS: false
+       - task: PublishBuildArtifacts@1
+         displayName: 'Publish Artifact: Playbooks'
+         inputs:
+          PathtoPublish: '$(Pipeline.Workspace)'
+          ArtifactName: Playbooks
+
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'windows-2019'
+      variables: 
+      - group: Az connection settings
+      steps:
+      - download: current
+        artifact: Playbooks
+      - download: Scripts
+        patterns: '*.ps1'
+      - task: AzurePowerShell@4
+        displayName: 'Create and Update Playbooks'
+        inputs:
+         azureSubscription: 'SentinelasCode'
+         ScriptPath: '$(Pipeline.Workspace)/Scripts/Scripts/CreatePlaybooks.ps1'
+         ScriptArguments: '-resourceGroup $(ResourceGroup) -PlaybooksFolder $(Pipeline.Workspace)/Playbooks'
+         azurePowerShellVersion: LatestVersion
+         pwsh: true
+
+- stage: AlertRules
+
+  jobs:
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'vs2017-win2016'
+      steps:
+       - task: CopyFiles@2
+         displayName: 'Copy Alert Rules'
+         inputs:
+          SourceFolder: AnalyticsRules
+          TargetFolder: '$(Pipeline.Workspace)'
+       - task: Files-Validator@1
+         inputs:
+           rootDir: '$(Pipeline.Workspace)/*.json'
+           validateXML: false
+           validateJSON: true
+           validateYAML: false
+           validatePS: false
+       - task: PublishBuildArtifacts@1
+         displayName: 'Publish Artifact: RulesFile'
+         inputs:
+          PathtoPublish: '$(Pipeline.Workspace)'
+          ArtifactName: RulesFile
+
+    - job: AgentJob
+      pool:
+       name: Azure Pipelines
+       vmImage: 'windows-2019'
+      variables: 
+      - group: Az connection settings
+      steps:
+      - download: current
+        artifact: RulesFile
+      - download: Scripts
+        patterns: '*.ps1'
+      - task: AzurePowerShell@4
+        displayName: 'Create and Update Alert Rules'
+        inputs:
+         azureSubscription: 'SentinelasCode'
+         ScriptPath: '$(Pipeline.Workspace)/Scripts/Scripts/CreateAnalyticsRules.ps1'
+         ScriptArguments: '-Workspace $(Workspace) -RulesFile analytics-rules.json'
+         azurePowerShellVersion: LatestVersion
+         pwsh: true
